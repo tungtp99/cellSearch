@@ -10,7 +10,7 @@ void printProgress(double percentage) {
     fflush(stdout);
 }
 
-float* get_mean_rank(const std::string* path_hdf5) {
+float* get_mean_rank(const std::string* path_hdf5, const int* cluster_id, int number_cluster_cells) {
   struct loaded_data_t *loaded_data = load_data(path_hdf5);
 
   // Get ranking for each row
@@ -29,9 +29,20 @@ float* get_mean_rank(const std::string* path_hdf5) {
   int* rankking = new int[num_genes];
 
   std::cout << "Get mean rank \n";
-  int count = 0;
+
+  float count = 0;
+  int number_divide = number_cluster_cells;
+  --number_cluster_cells;
+  const int* cluster_iter = cluster_id;
+
   for (int i = 0; i < num_cells; ++i) {
-    printProgress(1.0 * i / (num_cells - 1));
+    if (*cluster_iter < i) {
+      if (number_cluster_cells == 0) break;
+      cluster_iter++;
+      --number_cluster_cells;
+    }
+    if (*cluster_iter != i) continue;
+    // printProgress(1.0 * i / (num_cells - 1));
 
     for (int j = (*indptr)[i]; j < (*indptr)[i + 1]; ++j) {
       row_data.push_back(std::make_pair((*data)[pos], (*indices)[pos]));
@@ -42,7 +53,7 @@ float* get_mean_rank(const std::string* path_hdf5) {
     if (row_data.size()) {
       std::sort(row_data.begin(), row_data.end());
 
-      rankking[0] = 0;
+      rankking[0] = 1;
       for (int j = 1; j < row_data.size(); ++j)
         if (row_data[j].first == row_data[j - 1].first)
           rankking[j] = rankking[j - 1] + 1;
@@ -53,23 +64,29 @@ float* get_mean_rank(const std::string* path_hdf5) {
         if (row_data[j].first == row_data[j + 1].first)
           rankking[j] = rankking[j + 1];
       
-      int count_smaller = 0;
-      float rank_current = 0.5 * rankking[0] * (rankking[0] + 1);
+      count += float(0.5) * (num_genes - row_data.size()) / number_divide;
+      int count_smaller = num_genes - row_data.size();
+      float rank_current = double(0.5) * (rankking[0] + 1) + count_smaller;
+      //float rank_current = 0;
+
       mean_rank[row_data[0].second] += rank_current;
       for (int j = 1; j < row_data.size(); ++j) {
         if (row_data[j].first != row_data[j - 1].first) {
           count_smaller += rankking[j - 1];
-          rank_current = 0.5 * rankking[j] * (rankking[j] + 1) + count_smaller;
+          rank_current = double(0.5) * (rankking[j] + 1) + count_smaller;
         }
-        mean_rank[row_data[j].second] += rank_current;
+        mean_rank[row_data[j].second] += rank_current;// - float(0.5) * (num_genes - row_data.size());
       }
       row_data.clear();
     }
   }
   std::cout << "\n";
 
+
+  std::cout << num_genes;
   for (int i = 0; i < num_genes; i++) {
-    mean_rank[i] /= num_cells;
+    mean_rank[i] /= number_divide;
+    //mean_rank[i] += count;
   }
 
   std::cout << "Some element of mean rank ..." << endl;
@@ -86,9 +103,9 @@ float* get_mean_rank(const std::string* path_hdf5) {
 
 
 extern "C" {
-    float* c_get_mean_rank(char* path_hdf5) {
+    float* c_get_mean_rank(char* path_hdf5,int* cluster_id, int number_cells) {
       std::string path(path_hdf5);
-      return get_mean_rank(&path);
+      return get_mean_rank(&path, cluster_id, number_cells);
     }
 
     void c_free_mem(float* ptr) {

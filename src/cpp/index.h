@@ -8,6 +8,6 @@
 #include <vector>
 #include <map>
 
-float* get_mean_rank(const std::string* path_hdf5);
+float* get_mean_rank(const std::string* path_hdf5, const int* cluster_id);
 
 #endif

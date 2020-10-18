@@ -28,7 +28,7 @@ float* get_mean_rank(const std::string* path_hdf5, const int* cluster_id, int nu
   std::memset(mean_rank, 0, num_genes * sizeof(float));
   int* rankking = new int[num_genes];
 
-  std::cout << "Get mean rank \n";
+  std::cout << " NEW Get mean rank \n";
 
   float count = 0;
   int number_divide = number_cluster_cells;
@@ -41,7 +41,10 @@ float* get_mean_rank(const std::string* path_hdf5, const int* cluster_id, int nu
       cluster_iter++;
       --number_cluster_cells;
     }
-    if (*cluster_iter != i) continue;
+    if (*cluster_iter != i) {
+        pos += (*indptr)[i + 1] - (*indptr)[i];
+        continue;
+    }
     // printProgress(1.0 * i / (num_cells - 1));
 
     for (int j = (*indptr)[i]; j < (*indptr)[i + 1]; ++j) {
@@ -68,13 +71,22 @@ float* get_mean_rank(const std::string* path_hdf5, const int* cluster_id, int nu
       int count_smaller = num_genes - row_data.size();
       float rank_current = double(0.5) * (rankking[0] + 1) + count_smaller;
       //float rank_current = 0;
+        
+      std::map<int, int> check;
 
       mean_rank[row_data[0].second] += rank_current;
       for (int j = 1; j < row_data.size(); ++j) {
         if (row_data[j].first != row_data[j - 1].first) {
           count_smaller += rankking[j - 1];
           rank_current = double(0.5) * (rankking[j] + 1) + count_smaller;
+          if (rank_current > num_genes) {
+              std::cout <<"Some thing wrong " << count_smaller << rankking[j] << "\n";
+          }
         }
+        if (check[row_data[j].second] != 0)  {
+            std::cout << "cols appear more then two times" << " " <<  row_data[j].first << " " << row_data[j].second << "\n";
+        }
+        check[row_data[j].second] = 1;
         mean_rank[row_data[j].second] += rank_current;// - float(0.5) * (num_genes - row_data.size());
       }
       row_data.clear();

@@ -28,6 +28,26 @@ def load_sparse_data(study_path):
     
     return data, indices, indptr, cells_count, genes_count
 
+def load_sparse_data_row_col(study_path):
+    f = h5py.File(os.path.join(study_path, 'main', 'matrix.hdf5'), 'r')
+
+    # Data matrix
+    data = f['bioturing']['data']
+    data = data[0:len(data)]
+
+    indices = f['bioturing']['indices'] # Gene index - row
+    indices = indices[0:len(indices)]
+    
+    indptr = f['bioturing']['indptr']
+
+    ans = []
+    pos = 0
+    for cell_index, _ in enumerate(indptr):
+        for i, row_index in indices[indptr[cell_index]:indptr[cell_index + 1]]:
+            ans.append([cell_index, row_index, data[pos + i]])
+        pos += indptr[cell_index + 1] - indptr[cell_index]
+    return ans
+
 def load_gene_sparse_data(study_path):
     # Read study metadata
     f = h5py.File(os.path.join(study_path, 'main', 'matrix.hdf5'), 'r')

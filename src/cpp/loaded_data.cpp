@@ -28,7 +28,29 @@ struct loaded_data_t *load_data(const string *path, int use_reduce)
 	}
 
   return res;
+}
 
+void write_hdf5(const std::string* path, vvp matrix)
+{
+  File file(*path, File::ReadWrite | File::Create | File::Truncate);
+  int number_cells = matrix.size();
+  std::vector<int> indptr = {0};
+  std::vector<int> indices;
+  std::vector<float> data;
+  int pos = 0;
+  for (int c = 0; c < matrix.size(); ++c) {
+    for (int g = 0; g < matrix[c].size(); g++) {
+      indices.push_back(matrix[c][g].second);
+      data.push_back(matrix[c][g].second);
+      pos++;
+    }
+    indptr.push_back(pos);
+  }
+
+  Group group = file.getGroup("/");
+  write1DArray(group, "indices", indices);
+  write1DArray(group, "indptr", indptr);
+  write1DArray(group, "data", data);
 }
 
 void destroy_loaded_data(struct loaded_data_t *loaded_data)

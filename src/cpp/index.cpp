@@ -114,10 +114,147 @@ float* get_mean_rank(const std::string* path_hdf5, const int* cluster_id, int nu
 }
 
 
-extern "C" {
-    float* c_get_mean_rank(char* path_hdf5,int* cluster_id, int number_cells) {
+// Get data of cluster from matrix
+vvp filter_cluster_data(loaded_data_t* loaded_data,
+                        const int* cluster_ids,
+                        const int cluster)
+{
+  std::cout << "Filter cluster data for cluster " << cluster << "\n";
+  vvp cluster_data;
+  std::vector<long unsigned int> *indptr = loaded_data->indptr;
+  std::vector<int> *indices = loaded_data->indices;
+  std::vector<float> *data = loaded_data->data;
+  std::vector<int> *shape = loaded_data->shape;
+  int num_cells = (*shape)[0];
+  int num_genes = (*shape)[1];
+  int pos = 0;
+  for (int i = 0; i < num_cells; ++i) {
+    // std::cout << cluster_ids[i] << " " << cluster << "\n";
+    if (cluster_ids[i] != cluster) {
+      pos += (*indptr)[i + 1] - (*indptr)[i];
+      continue;
+    }
+    vp cell_data;
+    for (int j = (*indptr)[i]; j < (*indptr)[i + 1]; ++j) {
+      cell_data.push_back(std::make_pair((*data)[pos],
+                                        (*indices)[pos]));
+      pos++;
+    }
+    cluster_data.push_back(std::move(cell_data));
+  }
+  return std::move(cluster_data);
+}
+
+// Represent a cluster by 100 cells which 
+// have genes express as mean of 100 random 
+// cells in this cluster
+vvp make_represent_cluster(loaded_data_t* loaded_data, 
+                            const int number_genes,
+                            const int* cluster_ids,
+                            const int cluster)
+{
+  std::vector<int> v(100);
+  float express_per_row[number_genes];
+  std::memset(express_per_row, 0, number_genes * sizeof(float));
+
+  vvp cluster_data = filter_cluster_data(loaded_data,
+                                        cluster_ids,
+                                        cluster);
+  float range =  (1.0 * RAND_MAX + 1u) / cluster_data.size();
+  // Get some mean cell represent for cluster 
+  vvp cluster_represent;
+  std::cout << "cluster " << cluster << " data have size " <<  cluster_data.size() << "\n";
+
+  if (cluster_data.size() == 0)
+    return cluster_represent;
+
+  for (int i = 0; i < 100; ++i) {
+    
+    vp cell_represent;
+    // Get random some cell in cluster to calc mean express
+    std::generate(v.begin(), v.end(), std::rand);
+
+    for (int j = 0; j < 100; ++j) {
+      int cell_index = v[j] / range;
+      vp *cell_data = &cluster_data[cell_index];
+      for (int k = 0; k < cell_data->size(); k++) 
+        express_per_row[(*cell_data)[k].second] += (*cell_data)[k].first;
+    }
+    // Calc mean express for 100 cells
+    for (int j = 0; j < 100; ++j) {
+      int cell_index = v[i] / range;
+      vp *cell_data = &cluster_data[cell_index];
+      for (int k = 0; k < cell_data->size(); k++) {
+        int pos = (*cell_data)[k].second;
+        if (express_per_row[pos] != 0) {
+          cell_represent.push_back(std::make_pair(express_per_row[pos] / 100,
+                                                  pos));
+          express_per_row[pos] = 0;
+        }
+      }
+    }
+    cluster_represent.push_back(std::move(cell_represent));
+  }
+  
+  return std::move(cluster_represent);
+}
+
+// For each cluster, calc a group represent for this cluster
+// by 100 cells 
+void make_represent_matrix(const std::string* path_hdf5,
+                          const std::string* path_represent_hdf5,
+                          int number_cells,
+                          int* cluster_ids,
+                          int number_clusters) 
+{
+  struct loaded_data_t* loaded_data = load_data(path_hdf5);
+  std::vector<int> *shape = loaded_data->shape;
+  int num_cells = (*shape)[0];
+  int num_genes = (*shape)[1];
+  if (number_cells != num_cells) {
+    std::cout << "Error!!! Number of cells is different with matrix" << endl;
+    return;
+  }
+  vvp cluster_data;
+  for (int i = 0; i < number_clusters; ++i) {
+    std::cout << "Make represent data for cluster " << i << "of " <<  number_clusters<< "\n";
+    vvp represent_cluster = make_represent_cluster(loaded_data,
+                                                  num_genes,
+                                                  cluster_ids,
+                                                  i);
+    std::cout << "Represent size" << represent_cluster.size() << "\n";
+    cluster_data.insert(cluster_data.end(),
+                        represent_cluster.begin(),
+                        represent_cluster.end());
+  }
+  
+  write_hdf5(path_represent_hdf5, std::move(cluster_data));
+  destroy_loaded_data(loaded_data);
+}
+
+extern "C" 
+  {
+    float* c_get_mean_rank(char* path_hdf5,
+                          int* cluster_id,
+                          int number_cells) 
+    {
       std::string path(path_hdf5);
       return get_mean_rank(&path, cluster_id, number_cells);
+    }
+
+    void c_make_represent_matrix(char* path_hdf5_char,
+                          char* path_represent_hdf5_char,
+                          int number_cells,
+                          int* cluster_ids,
+                          int number_clusters)
+    {
+      std::string path_hdf5(path_hdf5_char);
+      std::string path_represent_hdf5(path_represent_hdf5_char);
+      make_represent_matrix(&path_hdf5,
+                            &path_represent_hdf5,
+                            number_cells,
+                            cluster_ids,
+                            number_clusters);
     }
 
     void c_free_mem(float* ptr) {

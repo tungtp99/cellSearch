@@ -2,7 +2,8 @@
 #define PBSTR "||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||"
 #define PBWIDTH 60
 
-void printProgress(double percentage) {
+void printProgress(double percentage) 
+{
     int val = (int) (percentage * 100);
     int lpad = (int) (percentage * PBWIDTH);
     int rpad = PBWIDTH - lpad;
@@ -10,7 +11,10 @@ void printProgress(double percentage) {
     fflush(stdout);
 }
 
-float* get_mean_rank(const std::string* path_hdf5, const int* cluster_id, int number_cluster_cells) {
+float* get_mean_rank(const std::string* path_hdf5,
+                    const int* cluster_id,
+                    int number_cluster_cells) 
+{
   struct loaded_data_t *loaded_data = load_data(path_hdf5);
 
   // Get ranking for each row
@@ -107,7 +111,6 @@ float* get_mean_rank(const std::string* path_hdf5, const int* cluster_id, int nu
   }
   std::cout << "\n";
 
-
   delete[] rankking;
   destroy_loaded_data(loaded_data);
   return mean_rank;
@@ -169,7 +172,6 @@ vvp make_represent_cluster(loaded_data_t* loaded_data,
     return cluster_represent;
 
   for (int i = 0; i < 100; ++i) {
-    
     vp cell_represent;
     // Get random some cell in cluster to calc mean express
     std::generate(v.begin(), v.end(), std::rand);
@@ -182,12 +184,12 @@ vvp make_represent_cluster(loaded_data_t* loaded_data,
     }
     // Calc mean express for 100 cells
     for (int j = 0; j < 100; ++j) {
-      int cell_index = v[i] / range;
+      int cell_index = v[j] / range;
       vp *cell_data = &cluster_data[cell_index];
       for (int k = 0; k < cell_data->size(); k++) {
         int pos = (*cell_data)[k].second;
         if (express_per_row[pos] != 0) {
-          cell_represent.push_back(std::make_pair(express_per_row[pos] / 100,
+          cell_represent.push_back(std::make_pair(1.0 * express_per_row[pos] / 100,
                                                   pos));
           express_per_row[pos] = 0;
         }
@@ -205,7 +207,8 @@ void make_represent_matrix(const std::string* path_hdf5,
                           const std::string* path_represent_hdf5,
                           int number_cells,
                           int* cluster_ids,
-                          int number_clusters) 
+                          int number_clusters,
+                          const std::string* study_name) 
 {
   struct loaded_data_t* loaded_data = load_data(path_hdf5);
   std::vector<int> *shape = loaded_data->shape;
@@ -215,20 +218,20 @@ void make_represent_matrix(const std::string* path_hdf5,
     std::cout << "Error!!! Number of cells is different with matrix" << endl;
     return;
   }
-  vvp cluster_data;
+  vvvp cluster_data;
   for (int i = 0; i < number_clusters; ++i) {
-    std::cout << "Make represent data for cluster " << i << "of " <<  number_clusters<< "\n";
+    std::cout << "Make represent data for cluster " << i << " of " <<  number_clusters<< "\n";
     vvp represent_cluster = make_represent_cluster(loaded_data,
                                                   num_genes,
                                                   cluster_ids,
                                                   i);
-    std::cout << "Represent size" << represent_cluster.size() << "\n";
-    cluster_data.insert(cluster_data.end(),
-                        represent_cluster.begin(),
-                        represent_cluster.end());
+    std::cout << "Represent size " << represent_cluster.size() << "\n";
+    cluster_data.push_back(std::move(represent_cluster));
   }
   
-  write_hdf5(path_represent_hdf5, std::move(cluster_data));
+  write_hdf5(path_represent_hdf5,
+            std::move(cluster_data),
+            study_name);
   destroy_loaded_data(loaded_data);
 }
 
@@ -246,18 +249,22 @@ extern "C"
                           char* path_represent_hdf5_char,
                           int number_cells,
                           int* cluster_ids,
-                          int number_clusters)
+                          int number_clusters,
+                          char* study_name_char)
     {
-      std::string path_hdf5(path_hdf5_char);
       std::string path_represent_hdf5(path_represent_hdf5_char);
+      std::string study_name(study_name_char);
+      std::string path_hdf5(path_hdf5_char);
       make_represent_matrix(&path_hdf5,
                             &path_represent_hdf5,
                             number_cells,
                             cluster_ids,
-                            number_clusters);
+                            number_clusters,
+                            &study_name);
     }
 
-    void c_free_mem(float* ptr) {
+    void c_free_mem(float* ptr) 
+    {
       delete[] ptr;
     }
   }

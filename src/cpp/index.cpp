@@ -26,8 +26,8 @@ float* get_mean_rank(const std::string* path_hdf5,
 
   int pos = 0;
   int total_add = 0;
-  int num_cells = (*shape)[0];
-  int num_genes = (*shape)[1];
+  int num_cells = (*shape)[1];
+  int num_genes = (*shape)[0];
   float* mean_rank = new float[num_genes];
   std::memset(mean_rank, 0, num_genes * sizeof(float));
   int* rankking = new int[num_genes];
@@ -128,8 +128,8 @@ vvp filter_cluster_data(loaded_data_t* loaded_data,
   std::vector<int> *indices = loaded_data->indices;
   std::vector<float> *data = loaded_data->data;
   std::vector<int> *shape = loaded_data->shape;
-  int num_cells = (*shape)[0];
-  int num_genes = (*shape)[1];
+  int num_cells = (*shape)[1];
+  int num_genes = (*shape)[0];
   int pos = 0;
   for (int i = 0; i < num_cells; ++i) {
     // std::cout << cluster_ids[i] << " " << cluster << "\n";
@@ -212,8 +212,8 @@ void make_represent_matrix(const std::string* path_hdf5,
 {
   struct loaded_data_t* loaded_data = load_data(path_hdf5);
   std::vector<int> *shape = loaded_data->shape;
-  int num_cells = (*shape)[0];
-  int num_genes = (*shape)[1];
+  int num_cells = (*shape)[1];
+  int num_genes = (*shape)[0];
   if (number_cells != num_cells) {
     std::cout << "Error!!! Number of cells is different with matrix" << endl;
     return;
@@ -234,6 +234,86 @@ void make_represent_matrix(const std::string* path_hdf5,
             study_name);
   destroy_loaded_data(loaded_data);
 }
+
+
+void convert_to_gene_ontology(const string *path, const string *path_out)
+{
+
+  std::cout << "Here\n";
+  std::string group_hdf5 = "/";
+  struct loaded_data_t *loaded_data = load_data(path, &group_hdf5);
+  std::vector<long unsigned int> *indptr = loaded_data->indptr;
+  std::vector<std::string> *features = loaded_data->barcodes;
+  std::vector<int> *indices = loaded_data->indices;
+  std::vector<float> *data = loaded_data->data;
+  std::vector<int> *shape = loaded_data->shape;
+  
+  std::vector<int> shape_go;
+  std::vector<float> data_go;
+  std::vector<int> indices_go;
+  std::vector<std::string> gene_names;
+  std::vector<long unsigned int> indptr_go = {0};
+  std::vector<std::string> *barcodes = loaded_data->gene_names;
+  
+  std::cout << indices->size() << "\n";
+  
+  std::ifstream i;
+  i.open(PATH_INDEXGO2SIZE);
+  json indexgo2size;
+  i >> indexgo2size;
+  i.close();
+  i.open(PATH_GSE2INDEXGO);
+  json gse2indexgo;
+  i >> gse2indexgo;
+  i.close();
+
+  std::map<std::string, int> indexgo2size_stl = indexgo2size.get<std::map<std::string, int>>();
+
+  std::cout << "get json \n";
+  int number_go = 0;
+  int pos = 0;
+  std::unordered_map<std::string, std::vector<int>> gse2indexgo_stl;
+  std::unordered_map<std::string, bool> bad_features;
+  for (int i = 0; i < (*shape)[1]; ++i) {
+    std::vector<std::string> features_row;
+    for (int index = (*indptr)[i]; index < (*indptr)[i + 1]; ++index) {
+      features_row.push_back((*features)[(*indices)[index]]);
+    }
+    std::cout << "Transfrom " << i << "\n";
+    
+    std::unordered_map<int, int> go_value = transform_features_to_go(std::move(features_row),
+                                                                     gse2indexgo,
+                                                                     gse2indexgo_stl,
+                                                                     bad_features);
+    std::cout << "Transfrom  done\n";
+    vp data_row;
+    for (auto it = go_value.begin(); it != go_value.end(); ++it)
+      data_row.push_back(std::make_pair((*it).first, (*it).second));
+    sort(data_row.begin(), data_row.end());
+    for (int j = 0; j < data_row.size(); ++j) {
+      float portion = 1.0 * data_row[j].second
+                      / int(indexgo2size_stl[std::to_string(int(data_row[j].first))]);
+      data_go.push_back(portion);
+      indices_go.push_back(data_row[j].first);
+    }
+    std::cout << "sort done";
+    if (int(data_row.size()) != 0) {
+      pos += data_row.size();
+      number_go = max(number_go, int(data_row[data_row.size() - 1].first));
+    }
+    std::cout << "get max done";
+    indptr_go.push_back(pos);
+  }
+  shape_go = {number_go + 1, (*shape)[1]};
+  for (int i = 0; i < number_go + 1; ++i)
+    gene_names.push_back(std::to_string(i));
+
+  write_matrix_hdf5("/", *path_out, &data_go, &shape_go,
+                    &indptr_go, &indices_go, barcodes, &gene_names);
+
+  destroy_loaded_data(loaded_data);
+}
+
 
 extern "C" 
   {
@@ -261,6 +341,13 @@ extern "C"
                             cluster_ids,
                             number_clusters,
                             &study_name);
+    }
+
+    void c_convert_to_gene_ontology(char *path_char, char *path_out_char)
+    {
+      std::string path(path_char);
+      std::string path_out(path_out_char);
+      convert_to_gene_ontology(&path, &path_out);
     }
 
     void c_free_mem(float* ptr) 

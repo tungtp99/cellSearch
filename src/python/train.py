@@ -1,174 +1,144 @@
-import pandas as pd 
 import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
-from scipy import sparse 
+import h5py
+import json
+import os
+import tensorflow as tf
+from sklearn import preprocessing
+from sklearn import tree
+from sklearn.tree import DecisionTreeClassifier, plot_tree
+import matplotlib.pyplot as plt
+from sklearn.cluster import KMeans
+from collections import Counter
+import graphviz 
+from load_generate_data import *
 
 
 
-class MF(object):
-    """docstring for CF"""
-    def __init__(self, Y_data, K = 100, lam = 0.1, Xinit = None, Winit = None, 
-            learning_rate = 0.5, max_iter = 1000, print_every = 100, user_based = 1):
-        self.Y_raw_data = Y_data
-        self.K = K
-        # regularization parameter
-        self.lam = lam
-        # learning rate for gradient descent
-        self.learning_rate = learning_rate
-        # maximum number of iterations
-        self.max_iter = max_iter
-        # print results after print_every iterations
-        self.print_every = print_every
-        # user-based or item-based
-        self.user_based = user_based
-        # number of users, items, and ratings. Remember to add 1 since id starts from 0
-        self.n_users = int(np.max(Y_data[:, 0])) + 1 
-        self.n_items = int(np.max(Y_data[:, 1])) + 1
-        self.n_ratings = Y_data.shape[0]
+#profile = load_study(study_path)
+
+def get_highly_genes_in_study(study_path):
+    profile = load_study(study_path)
+    standardized_profile = profile
+    cluster_profile = standardized_profile
+    cluster_centroid = np.array(np.mean(cluster_profile, axis = 0).tolist()[0], dtype=np.float32)
+    highly_genes_indices = np.transpose(np.argwhere(cluster_centroid > np.mean(cluster_centroid))).tolist()[0]
+    map_id_index = load_genes_id2index_mapping(study_path)
+    highly_in_study = [map_id_index['index'][index] for index in highly_genes_indices]
+    return highly_in_study
+
+def get_highly_genes_in_list_study(list_study_path):
+    highly_genes = get_highly_genes_in_study(list_study_path[0])
+
+    # Get intersection of highly genes express in all study
+    for study_path in list_study_path[1:]:
+        highly_in_study = get_highly_genes_in_study(study_path)
+        highly_genes = list(set(highly_genes) & set(highly_in_study))
         
-        if Xinit is None: # new
-            self.X = np.random.randn(self.n_items, K)
-        else: # or from saved data
-            self.X = Xinit 
+    return highly_genes
+
+def map_highly_genes_id_to_study_col(highly_genes, study_path):
+    map_id_index = load_genes_id2index_mapping(study_path)
+    index = np.where([map_id_index['id'][id] for id in highly_genes] != None)
+    return index
+
+
+def get_rank_matrix(sparse_matrix):
+    for cell_id in range(sparse_matrix.shape[0]):
+        row_index = sparse_matrix[cell_id, :].indices
+        data_row = sparse_matrix[cell_id, :].data
+        sparse_matrix[cell_id, row_index] = np.argsort(data_row) + 1
+    return sparse_matrix
+
+
+def get_data_joined(path):
+    list_study_path = ['/home/tung/RepresentData/Transform/GSE123904_human',
+                    '/home/tung/RepresentData/Transform/GSE135922_all',
+                    '/home/tung/RepresentData/Transform/GSE140228_10X',
+                    '/home/tung/RepresentData/Transform/GSE150430']
+    data = None
+    have_data = False
+    barcodes = []
+    for study in list_study_path:
+        mt, barcode_study = load_generate_data(study)
+        print(mt.shape)
+        if have_data == False:
+            have_data = True
+            data = mt
+        else:
+            data = np.concatenate((data, mt), axis=0)
+        barcodes.extend(barcode_study)
+
         
-        if Winit is None: 
-            self.W = np.random.randn(K, self.n_users)
-        else: # from daved data
-            self.W = Winit
-            
-        # normalized data, update later in normalized_Y function
-        self.Y_data_n = self.Y_raw_data.copy()
 
 
-    def normalize_Y(self):
-        if self.user_based:
-            user_col = 0
-            item_col = 1
-            n_objects = self.n_users
+    # with open(os.path.join(path, "data.json")) as fi:
+    #     data = json.load(fi)
+    # with open(os.path.join(path, "meta.json")) as fi:
+    #     barcodes = json.load(fi)
 
-        # if we want to normalize based on item, just switch first two columns of data
-        else: # item bas
-            user_col = 1
-            item_col = 0 
-            n_objects = self.n_items
-
-        users = self.Y_raw_data[:, user_col] 
-        self.mu = np.zeros((n_objects,))
-        for n in range(n_objects):
-            # row indices of rating done by user n
-            # since indices need to be integers, we need to convert
-            ids = np.where(users == n)[0].astype(np.int32)
-            # indices of all ratings associated with user n
-            item_ids = self.Y_data_n[ids, item_col] 
-            # and the corresponding ratings 
-            ratings = self.Y_data_n[ids, 2]
-            # take mean
-            m = np.mean(ratings) 
-            if np.isnan(m):
-                m = 0 # to avoid empty array and nan value
-            self.mu[n] = m
-            # normalize
-            self.Y_data_n[ids, 2] = ratings - self.mu[n]
-
-    def loss(self):
-        L = 0 
-        for i in range(self.n_ratings):
-            # user, item, rating
-            n, m, rate = int(self.Y_data_n[i, 0]), int(self.Y_data_n[i, 1]), self.Y_data_n[i, 2]
-            L += 0.5*(rate - self.X[m, :].dot(self.W[:, n]))**2
-        
-        # take average
-        L /= self.n_ratings
-        # regularization, don't ever forget this 
-        L += 0.5*self.lam*(np.linalg.norm(self.X, 'fro') + np.linalg.norm(self.W, 'fro'))
-        return L 
-
-    def updateX(self):
-        for m in range(self.n_items):
-            user_ids, ratings = self.get_users_who_rate_item(m)
-            Wm = self.W[:, user_ids]
-            # gradient
-            grad_xm = -(ratings - self.X[m, :].dot(Wm)).dot(Wm.T)/self.n_ratings + \
-                                               self.lam*self.X[m, :]
-            self.X[m, :] -= self.learning_rate*grad_xm.reshape((self.K,))
     
-    def updateW(self):
-        for n in range(self.n_users):
-            item_ids, ratings = self.get_items_rated_by_user(n)
-            Xn = self.X[item_ids, :]
-            # gradient
-            grad_wn = -Xn.T.dot(ratings - Xn.dot(self.W[:, n]))/self.n_ratings + \
-                        self.lam*self.W[:, n]
-            self.W[:, n] -= self.learning_rate*grad_wn.reshape((self.K,))
+    barcode_origin = np.array([('_').join(x.split('_')[1:]) for x in barcodes])
+    barcodes = [x.split('_')[-1] for x in barcodes]
+    le = preprocessing.LabelEncoder()                                                                                                                                         
+    le.fit(barcodes)                                                                                                                                                          
+    barcodes = le.transform(barcodes)
+    print(barcodes)
 
-    def fit(self):
-        self.normalize_Y()
-        for it in range(self.max_iter):
-            self.updateX()
-            self.updateW()
-            if (it + 1) % self.print_every == 0:
-                rmse_train = self.evaluate_RMSE(self.Y_raw_data)
-                print('iter =', it + 1, ', loss =', self.loss(), ', RMSE train =', rmse_train)
+    kmeans = KMeans(n_clusters=50, random_state=0).fit(data)
+    group = np.array(kmeans.labels_)
 
-    def pred(self, u, i):
-        """ 
-        predict the rating of user u for item i 
-        if you need the un
-        """
-        u = int(u)
-        i = int(i)
-        if self.user_based:
-            bias = self.mu[u]
-        else: 
-            bias = self.mu[i]
-        pred = self.X[i, :].dot(self.W[:, u]) + bias 
-        # truncate if results are out of range [0, 5]
-        if pred < 0:
-            return 0 
-        if pred > 5: 
-            return 5 
-        return pred 
+    for i in range(max(group) + 1):
+        list_index = np.where(group == i)
+        print(Counter(barcode_origin[list_index]))
+        print("########################################")
+        print("########################################")
+        print("########################################")
+        print("########################################")
+
+    print()
     
-    def pred_for_user(self, user_id):
-        """
-        predict ratings one user give all unrated items
-        """
-        ids = np.where(self.Y_data_n[:, 0] == user_id)[0]
-        items_rated_by_u = self.Y_data_n[ids, 1].tolist()              
-        
-        y_pred = self.X.dot(self.W[:, user_id]) + self.mu[user_id]
-        predicted_ratings= []
-        for i in range(self.n_items):
-            if i not in items_rated_by_u:
-                predicted_ratings.append((i, y_pred[i]))
-        
-        return predicted_ratings
+    data = np.array(data)
 
-    def get_items_rated_by_user(self, user_id):
-        """
-        get all items which are rated by user user_id, and the corresponding ratings
-        """
-        ids = np.where(self.Y_data_n[:,0] == user_id)[0] 
-        item_ids = self.Y_data_n[ids, 1].astype(np.int32) # indices need to be integers
-        ratings = self.Y_data_n[ids, 2]
-        return (item_ids, ratings)
-        
-        
-    def get_users_who_rate_item(self, item_id):
-        """
-        get all users who rated item item_id and get the corresponding ratings
-        """
-        ids = np.where(self.Y_data_n[:,1] == item_id)[0] 
-        user_ids = self.Y_data_n[ids, 0].astype(np.int32)
-        ratings = self.Y_data_n[ids, 2]
-        return (user_ids, ratings)
 
-    def evaluate_RMSE(self, rate_test):
-        n_tests = rate_test.shape[0]
-        SE = 0 # squared error
-        for n in range(n_tests):
-            pred = self.pred(rate_test[n, 0], rate_test[n, 1])
-            SE += (pred - rate_test[n, 2])**2 
+    clf = tree.DecisionTreeClassifier(max_depth=10, max_leaf_nodes=50)
+    clf = clf.fit(data, barcodes)
+    print(clf)
+    print(clf.score(data, barcodes))
+    plot_tree(clf, filled=True)
+    plt.show()
 
-        RMSE = np.sqrt(SE/n_tests)
-        return RMSE
+    dot_data = tree.export_graphviz(clf, out_file=None) 
+    graph = graphviz.Source(dot_data) 
+    graph.render("iris") 
+
+
+
+
+    # data = np.expand_dims(data, -1)
+
+    # model = tf.keras.Sequential([
+    #     tf.keras.layers.Flatten(input_shape=(20,1)),
+    #     tf.keras.layers.Dense(64, activation='elu'),
+    #     tf.keras.layers.Dense(128, activation='elu'),
+    #     tf.keras.layers.Dense(64, activation='elu'),
+    #     tf.keras.layers.Dense(50),
+    #     tf.keras.layers.Softmax()
+    # ])
+    # model.summary()
+    # model.compile(optimizer='adam',``
+    #             loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+    #             metrics=['accuracy'])
+    # model.fit(data, barcodes, epochs=100)
+
+
+
+
+get_data_joined('/home/tung/RepresentData/Transform')
+
+
+    
+
+    
+
+
+

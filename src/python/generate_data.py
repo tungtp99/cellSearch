@@ -1,6 +1,7 @@
 from CS_data_processing import *
 from CS_utils import *
 import numpy as np
+from env import *
 import traceback
 import ctypes
 import json
@@ -16,6 +17,9 @@ lib.c_make_represent_matrix.argtypes = [ctypes.c_char_p,
                                         ctypes.POINTER(ctypes.c_int), 
                                         ctypes.c_int,
                                         ctypes.c_char_p]
+lib.c_convert_to_gene_ontology.argtypes = [ctypes.c_char_p,
+                                          ctypes.c_char_p]
+
 
 def make_represent_matrix(path_hdf5,
                           path_hdf5_out,
@@ -92,7 +96,74 @@ def make_represent_data(path, path_out):
             print(e)
             traceback.print_exc()
 
-make_represent_data('/home/tung/.BioTBDataDev/Data/SingleCell/Study', '/home/tung/RepresentData')
+##make_represent_data('/home/tung/.BioTBDataDev/Data/SingleCell/Study', '/home/tung/RepresentData')
+def calc_map_gse2indexgo():
+    gse2goindex = {}
+    with open(PATH_HUMAN_ENRICH, "r") as fi:  
+        data = json.load(fi)
+    with open(PATH_GO2INDEX, 'r') as outfile:
+        go2index = json.load(outfile)
+
+    for go in data:
+        for gse in data[go]["genes"]:
+            if gse not in gse2goindex:
+                gse2goindex[gse] = []
+            gse2goindex[gse].append(go2index[go])
+
+    with open(PATH_GSE2INDEXGO, 'w') as outfile:
+        json.dump(gse2goindex, outfile)
+
+def calc_go2index():
+    go2index = {}
+    go2size = {}
+    indexgo2size = {}
+
+    pos = 0
+    with open(PATH_HUMAN_ENRICH, "r") as fi:
+        data = json.load(fi)
+    for index, go in enumerate(data):
+        if go not in go2index:
+            go2index[go] = pos
+            indexgo2size[pos] = len(data[go]["genes"])
+            go2size[go] = len(data[go]["genes"])
+            pos += 1
+        else:
+            if go2size[go] != len(data[go]["genes"]):
+                print("Go dublicate", go)
+
+
+    with open(PATH_GO2INDEX, 'w') as outfile:
+        json.dump(go2index, outfile)
+    with open(PATH_INDEXGO2SIZE, 'w') as outfile:
+        json.dump(indexgo2size, outfile)
+    with open(PATH_GO2SIZE, 'w') as outfile:
+        json.dump(go2size, outfile)
+
+def transform_gene_ontology():
+    for study in ['GSE124310', 'GSE110686', 'GSE144735', 'GSE114725', 'GSE135922_all',
+                  'GSE131907', 'Transform', 'stewart2019_fetal', 'james2020',
+                  'GSE144469_CD3', 'checkpointLiger.RData', 'GSE138266',
+                  'GSE133549_human_reference', 'GSE146771_smartseq', 'Sharma_14HCC',
+                  'AN1801', 'GSE123904_human', 'GSE140228_10X', 'E-MTAB-6149_t',
+                  'GSE143363', 'GSE128223', 'GSE145281_RN', 'GSE115978', 'roider2019',
+                  'GSE99254', 'GSE132465', 'SDY997_landscape', 'GSE145281_BT',
+                  'GSE135922_EC', 'young2018', 'GSE146771_10x', 'GSE146811_human',
+                  'GSE140819_Melanoma', 'GSE133549_human_hamony', 'GSE123814_BCC',
+                  'GSE126030', 'madissoon2020_lung', 'GSE150430',
+                  'madissoon2020_esophagus', 'E-MTAB-6149_all', 'stewart2019_mature',
+                  'GSE139324', 'GSE139555']:
+
+        path = os.path.join('/home/tung/RepresentData', study, 'matrix.hdf5')
+        path_out = os.path.join('/home/tung/RepresentData/Transform', study)
+        print(path_out)
+        if os.path.exists(path_out):
+            continue
+        os.mkdir(path_out)
+        lib.c_convert_to_gene_ontology(path.encode(), path_out.encode())
+transform_gene_ontology()
+        
+
+
 
 
     

@@ -44,24 +44,19 @@ def index_study(study_dir, out_path_dir, study_id):
         return False
 
     annotation = load_annotations(study_dir)
-
     if is_study_annotated(annotation):
         cell_based_cluster_label, cell_based_clusters = load_study_cell_type_cluster(study_dir)
     else:
         return False
-
     if len(cell_based_cluster_label) <= 4:
         return False
-
     create_path(out_path_dir)
-
     file = open(os.path.join(out_path_dir, "metadata.json"), "w")
     json.dump(cell_based_cluster_label, file)
     file.close()
     file = open(os.path.join(out_path_dir, "gene_list.json"), "w")
     json.dump(load_genes_list(study_dir), file)
     file.close()
-
     try:
         make_represent_matrix(os.path.join(study_dir, "main", "matrix.hdf5"),
                               out_path_dir,
@@ -73,7 +68,6 @@ def index_study(study_dir, out_path_dir, study_id):
         print(e)
         os.rmdir(out_path_dir)
         return False
-
     return True
 
 def make_represent_data(path, path_out):
@@ -99,8 +93,7 @@ def make_represent_data(path, path_out):
 ##make_represent_data('/home/tung/.BioTBDataDev/Data/SingleCell/Study', '/home/tung/RepresentData')
 def calc_map_gse2indexgo():
     gse2goindex = {}
-    with open(PATH_HUMAN_ENRICH, "r") as fi:  
-        data = json.load(fi)
+    data = get_mart()
     with open(PATH_GO2INDEX, 'r') as outfile:
         go2index = json.load(outfile)
 
@@ -119,8 +112,7 @@ def calc_go2index():
     indexgo2size = {}
 
     pos = 0
-    with open(PATH_HUMAN_ENRICH, "r") as fi:
-        data = json.load(fi)
+    data = get_mart()
     for index, go in enumerate(data):
         if go not in go2index:
             go2index[go] = pos
@@ -152,7 +144,6 @@ def transform_gene_ontology():
                   'GSE126030', 'madissoon2020_lung', 'GSE150430',
                   'madissoon2020_esophagus', 'E-MTAB-6149_all', 'stewart2019_mature',
                   'GSE139324', 'GSE139555']:
-
         path = os.path.join('/home/tung/RepresentData', study, 'matrix.hdf5')
         path_out = os.path.join('/home/tung/RepresentData/Transform', study)
         print(path_out)
@@ -160,10 +151,9 @@ def transform_gene_ontology():
             continue
         os.mkdir(path_out)
         lib.c_convert_to_gene_ontology(path.encode(), path_out.encode())
+
 transform_gene_ontology()
-        
-
-
+# ['GSE150430', 'GSE124310', 'GSE110686', 'GSE144735']
 
 
     

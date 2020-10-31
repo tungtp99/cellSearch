@@ -51,10 +51,14 @@ def get_rank_matrix(sparse_matrix):
 
 
 def get_data_joined(path):
-    list_study_path = ['/home/tung/RepresentData/Transform/GSE123904_human',
-                    '/home/tung/RepresentData/Transform/GSE135922_all',
-                    '/home/tung/RepresentData/Transform/GSE140228_10X',
-                    '/home/tung/RepresentData/Transform/GSE150430']
+
+    list_study_path =   ['/home/tung/RepresentData/Transform/GSE110686',
+                        '/home/tung/RepresentData/Transform/GSE124310',
+                        '/home/tung/RepresentData/Transform/GSE150430']
+                    # ['/home/tung/RepresentData/Transform/GSE123904_human',
+                    # '/home/tung/RepresentData/Transform/GSE135922_all',
+                    # '/home/tung/RepresentData/Transform/GSE140228_10X',
+                    # '/home/tung/RepresentData/Transform/GSE150430']
     data = None
     have_data = False
     barcodes = []
@@ -75,7 +79,6 @@ def get_data_joined(path):
     #     data = json.load(fi)
     # with open(os.path.join(path, "meta.json")) as fi:
     #     barcodes = json.load(fi)
-
     
     barcode_origin = np.array([('_').join(x.split('_')[1:]) for x in barcodes])
     barcodes = [x.split('_')[-1] for x in barcodes]
@@ -84,20 +87,27 @@ def get_data_joined(path):
     barcodes = le.transform(barcodes)
     print(barcodes)
 
-    kmeans = KMeans(n_clusters=50, random_state=0).fit(data)
-    group = np.array(kmeans.labels_)
+    # kmeans = KMeans(n_clusters=50, random_state=0).fit(data)
+    # group = np.array(kmeans.labels_)
 
-    for i in range(max(group) + 1):
-        list_index = np.where(group == i)
-        print(Counter(barcode_origin[list_index]))
-        print("########################################")
-        print("########################################")
-        print("########################################")
-        print("########################################")
+    # for i in range(max(group) + 1):
+    #     list_index = np.where(group == i)
+    #     print(Counter(barcode_origin[list_index]))
+    #     print("########################################")
+    #     print("########################################")
+    #     print("########################################")
+    #     print("########################################")
 
-    print()
+    # print()
     
     data = np.array(data)
+
+    value = sum(data > 0.5, 1)
+    print(len(value))
+    number_cells = data.shape[0]
+    print(number_cells / 2)
+    list_good = np.where(value < (number_cells / 2))[0]
+    index_good = np.array(range(data.shape[1]))[list_good]
 
 
     clf = tree.DecisionTreeClassifier(max_depth=10, max_leaf_nodes=50)
@@ -133,7 +143,7 @@ def get_data_joined(path):
 
 
 
-get_data_joined('/home/tung/RepresentData/Transform')
+#get_data_joined('/home/tung/RepresentData/Transform')
 
 
     

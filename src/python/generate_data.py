@@ -152,7 +152,7 @@ def transform_gene_ontology():
         os.mkdir(path_out)
         lib.c_convert_to_gene_ontology(path.encode(), path_out.encode())
 
-transform_gene_ontology()
+#transform_gene_ontology()
 # ['GSE150430', 'GSE124310', 'GSE110686', 'GSE144735']
 
 

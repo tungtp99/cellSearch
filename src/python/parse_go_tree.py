@@ -31,20 +31,19 @@ def parese_go_tree():
         
     return link, name_go
 
-def draw_graph():
+def draw_graph(path_study, path_graph, cell_index):
     def get_name(id, name_go):
         if id not in name_go:
             return id
         return name_go[id].split('/')[-1] + id
 
-    pos = 101
-    mt, barcodes =  load_generate_data('/home/tung/RepresentData/Transform/GSE150430')
-    print(barcodes[pos])
+    mt, barcodes =  load_generate_data(path_study, )
     print("get data")
+    print(barcodes[cell_index])
     link, name_go = parese_go_tree()
     print("get gene ontology structer")
 
-    cell_data = mt[pos,:]
+    cell_data = mt[cell_index,:]
     print(mt.shape)
     index2go = get_index2go()
     list_go = set()
@@ -59,7 +58,6 @@ def draw_graph():
             if go in link and v in link[go]:
                 graph.append([get_name(go, name_go) , get_name(v, name_go), link[go][v]])
 
-    with open('/home/tung/RepresentData/Transform/GSE150430/graph.csv', 'w') as fi:
+    with open(path_graph, 'w') as fi:
         writer = csv.writer(fi)
         writer.writerows(graph)            
-#draw_graph()
